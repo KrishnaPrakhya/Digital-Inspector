@@ -1,0 +1,50 @@
+[
+  {
+    "id": "kyc_bank_fraud_demo",
+    "filename": "kyc_bank_fraud_demo.mp3",
+    "kind": "reenactment",
+    "family": "kyc_bank_fraud",
+    "language": "en",
+    "description": "Synthetic kyc_bank_fraud script voiced by edge-tts. This is a REENACTMENT, not a real call."
+  },
+  {
+    "id": "tech_support_demo",
+    "filename": "tech_support_demo.mp3",
+    "kind": "reenactment",
+    "family": "tech_support",
+    "language": "en",
+    "description": "Synthetic tech_support script voiced by edge-tts. This is a REENACTMENT, not a real call."
+  },
+  {
+    "id": "refund_reward_demo",
+    "filename": "refund_reward_demo.mp3",
+    "kind": "reenactment",
+    "family": "refund_reward",
+    "language": "en",
+    "description": "Synthetic refund_reward script voiced by edge-tts. This is a REENACTMENT, not a real call."
+  },
+  {
+    "id": "digital_arrest_demo",
+    "filename": "digital_arrest_demo.mp3",
+    "kind": "reenactment",
+    "family": "digital_arrest",
+    "language": "en",
+    "description": "Synthetic digital_arrest script voiced by edge-tts. This is a REENACTMENT, not a real call."
+  },
+  {
+    "id": "real_1006849_normalized.wav",
+    "filename": "real_1006849_normalized.wav",
+    "kind": "real_recording",
+    "family": null,
+    "language": "en",
+    "description": "Real captured robocall audio (NCSU robocall-audio-dataset), unmodified."
+  },
+  {
+    "id": "real_1006854_normalized.wav",
+    "filename": "real_1006854_normalized.wav",
+    "kind": "real_recording",
+    "family": null,
+    "language": "en",
+    "description": "Real captured robocall audio (NCSU robocall-audio-dataset), unmodified."
+  }
+]

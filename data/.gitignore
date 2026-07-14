@@ -1,3 +1,5 @@
 raw/
-processed/
+processed/*
+!processed/train.jsonl
+!processed/eval.jsonl
 .venv/

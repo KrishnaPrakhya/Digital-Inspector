@@ -1,48 +1,65 @@
 # Data pipeline
 
-Run in order: `01_download.py` → `02_normalize.py` → (day 14) `03_weak_label_stages.py` → `04_augment.py` → `05_split.py` → `06_demo_audio.py`. All steps are idempotent; rerunning skips work already on disk.
+Builds the training/eval corpus for the family and stage classifiers (`training/train_and_export.ipynb`) and the demo audio bundled in the frontend. All scripts are idempotent — rerunning skips work already on disk — and read/write within `data/`.
 
-## Sources and what they actually are
+## Running it
 
-| source | claimed provenance | actual provenance (verified) | role |
-|---|---|---|---|
-| NCSU robocall audio | 1,432 real captured robocalls | real | strongest real-audio evidence, used for the audio pipeline and demo, not part of the text JSONL corpus |
-| BothBosu suite (4 datasets) | synthetic scam/non-scam dialogue | synthetic — confirmed via each dataset card (`meta-llama-3-70b-instruct` / Autogen + Together Inference / `gretelai/tabular-v0`) | bulk of the labeled `kyc_bank_fraud`, `tech_support`, `refund_reward`, `legitimate` training volume |
-| teeconnie IEEE scam/non-scam | "real fraud/normal transcripts" | real_derived — dataset's own description: collected from social media/forums (Twitter, Facebook, Instagram, YouTube, Quora, Stack Overflow, Reddit) then ChatGPT-augmented into scenarios. Not synthetic-from-nothing, not raw real transcripts either | contains genuine police-impersonation seed content (see below); real_derived eval anchor |
-| narayanyadav fraud-call-india | "India-specific real fraud/normal transcripts" | **mislabeled** — see below | real text, but not India-specific and not call transcripts as marketed |
-| FredZhang7 all-scam-spam | 42,619 real multilingual texts/emails | real (human-collected; ~1,040 rows had ChatGPT-assisted annotation per the dataset card, not row-flagged) | text-input robustness, not phone-call-family-specific |
+```
+uv sync
+cp .env.example .env   # fill in GROQ_API_KEY
+uv run python 01_download.py
+uv run python 02_normalize.py
+uv run python 02b_family_pass.py     # Groq-classifies unlabeled rows into the 7 families
+uv run python 03_weak_label_stages.py
+uv run python 04_augment.py
+uv run python 05_split.py            # produces processed/train.jsonl, eval.jsonl, scripts_index.jsonl
+uv run python 06_demo_audio.py       # renders frontend/public/demo/
+```
 
-## fraud-call-india-dataset is not what its name claims
+`02c_recover_none.py` is an optional maintenance pass that re-checks any rows `02b_family_pass.py` couldn't confidently classify.
 
-`fraud_call.file` is tab-separated `label\ttext` rows. Spot-checking the "fraud" rows against known UK SMS Spam Collection entries (e.g. "Todays Vodafone numbers ending with 4882 are selected to a receive a £350 award...") found verbatim matches. A keyword pass over all 638 fraud-labeled rows confirms this is systemic, not a few contaminating rows:
+## What each script does
 
-- 373 rows carry UK-context signal (£, Vodafone, premium-rate `09xx` numbers, "txt"/"reply")
-- 33 rows carry India-context signal (SBI/HDFC/ICICI, ₹, Mumbai/Delhi/Maharashtra, Aadhaar/PAN)
-- 6 rows carry both, 226 carry neither (generic, could be either)
+| script | purpose |
+|---|---|
+| `01_download.py` | pulls all public source datasets (HuggingFace, Kaggle, GitHub) |
+| `02_normalize.py` | unifies sources into one JSONL schema, maps source labels to the 7 scam families, dedupes near-identical dialogues |
+| `02b_family_pass.py` | Groq-classifies rows the source-label mapping couldn't place |
+| `03_weak_label_stages.py` | Groq-labels individual utterances with a playbook stage (`s0_none`…`s5_payment_demand`); `legitimate` calls are tagged `s0_none` deterministically |
+| `04_augment.py` | generates paraphrase / Hinglish (romanized + Devanagari) / entity-substitution variants of real dialogues, plus from-scratch generation for underrepresented families |
+| `05_split.py` | builds the final train/eval split, stratified by family, split by parent dialogue so augmented variants never leak across the boundary |
+| `06_demo_audio.py` | renders a few scripts as two-voice `edge-tts` audio and copies real robocall samples, for the frontend demo picker |
 
-Conclusion: this dataset is majority UK SMS Spam Collection under an India-branded name, with a real but small minority of genuinely India-context messages mixed in. It is **not** used as India-specific eval material. The 33 India-context rows are kept (`provenance: real`) but not specially weighted.
+`groq_batch.py` is the shared Groq client (batched requests, retry/backoff, resumable on-disk cache so a rerun never re-pays for work already done).
 
-## Eval composition (revised)
+## Data sources and provenance
 
-The original plan treated `fraud-call-india-dataset` as primary real eval material. That's wrong given the above. Revised:
+| source | provenance | role |
+|---|---|---|
+| NCSU robocall audio | real | real captured robocalls, used for the audio pipeline and demo |
+| BothBosu suite (4 HF datasets) | synthetic | LLM-generated scam/non-scam dialogue, bulk of training volume |
+| teeconnie IEEE scam/non-scam (Kaggle) | real-derived | collected from public social-media/forum reports, then LLM-augmented into full scripts |
+| narayanyadav fraud-call-india (Kaggle) | real | real SMS/call text; not India-specific despite the dataset name (see Limitations) |
+| FredZhang7 all-scam-spam (HF) | real | real multilingual email/SMS text; used for `/analyze/text` robustness, capped and excluded from eval for the call classifiers (see Limitations) |
 
-- **Real** (`provenance: real`): NCSU audio (strongest evidence, audio path only), FredZhang7 spam/ham, fraud-call-india's plain fraud/normal rows. Real in the sense of human-authored, not LLM-generated — not all India-specific.
-- **Real-derived** (`provenance: real_derived`): teeconnie IEEE scam/non-scam — collected-then-ChatGPT-augmented, disclosed as such.
-- **Fully synthetic** (`provenance: synthetic`): all four BothBosu datasets.
+Every row carries a `provenance` field (`real` / `real_derived` / `synthetic`) end to end, and every eval row carries an `eval_kind` (`real_holdout` or, if a family ever has zero real coverage, `dev_only_synthetic_sanity_check`) so any metrics report can be precise about what backs a given number.
 
-There are currently **zero purely-real, India-specific, phone-call-transcript rows** in this corpus. `05_split.py` (day 14) should build the eval split around `provenance != synthetic` rather than a strict "real" flag, and the top-level README must state this plainly rather than let a judge discover the UK-SMS-spam mislabeling themselves.
+## Limitations (disclosed by design)
 
-## digital_arrest / parcel_courier / investment_fraud seed status
+- No source in this corpus is a purely-real, India-specific, phone-call transcript. Eval is built from the closest available real and real-derived material and is honest about which is which via `provenance`.
+- `digital_arrest`, `parcel_courier`, and `investment_fraud` have limited real-world seed content; each is supplemented with synthetic generation grounded in real seeds where they exist, and in public advisory sources (see `digital_arrest_playbook.md`) for `digital_arrest` specifically.
+- Eval for the call-transcript classifiers excludes email/SMS-sourced content (FredZhang7) to stay representative of real phone-call usage; that content is capped rather than excluded from training, since it still has value for the pasted-text input path.
 
-None of the 5 sources' `type`/`label` columns map to these 3 families under the §4.2 mapping rule — they start with zero rows. Before writing `04_augment.py`, `02_normalize.py` now runs a keyword retag pass (`police|CBI|arrest|police station|investigation`) over the null-family rows, restricted to `kaggle_ieee_scam` and `kaggle_fraud_call_india` only.
+## Current split (`05_split.py` output)
 
-That restriction matters: the same keyword search against `fredzhang7_all_scam_spam`'s null rows returned 370 hits, and every one spot-checked was a false positive (radar-jammer ads, a Nigerian-prince "house arrest" story, base64 email MIME junk, "FBI & IRS seized goods" auction spam) — noise from a 42k-row email/SMS corpus, not phone-call police-impersonation content, and email is the wrong modality for this family anyway. Those rows were left `UNMAPPED`. The retag only ran against the two sources with actual call-style scam scripts, and every hit was manually spot-checked as genuine authority-impersonation content before trusting the pass:
+Run the script to regenerate; approximate current shape:
 
-- `kaggle_ieee_scam`: 60 rows retagged (e.g. "this is [Title][Name] from the local police department... social security number and bank account details", "You owe back taxes and will be arrested unless you pay immediately")
-- `kaggle_fraud_call_india`: 2 rows retagged ("Hello, I am from Mumbai Police. Your mobile number is used in crime. Please share the data.")
-
-Result: 62 real/real-derived `digital_arrest` seed rows now exist to anchor tomorrow's synthetic generation, instead of generating the class from a prompt with no real content behind it. `parcel_courier` and `investment_fraud` remain 100% synthetic-pending — no source contains matching content for either, keyword-based or otherwise.
-
-## Remaining unmapped rows (18,245)
-
-Mostly `fredzhang7_all_scam_spam`'s scam/spam-labeled rows plus `kaggle_ieee_scam` non-retagged rows and `bothbosu_scammer_conversation`'s label=1 rows — real or real-derived scam text without a family subtype in the source data. Plan: route these through the same Groq batching pattern as `03_weak_label_stages.py` (25/request, JSON array response, tenacity backoff, resumable cache) for a family-classification pass before augmentation, rather than discarding them.
+| family | train | eval |
+|---|---:|---:|
+| legitimate | 3,500 | 150 |
+| refund_reward | ~1,850 | ~25 |
+| kyc_bank_fraud | ~750 | ~12 |
+| tech_support | ~580 | 5 |
+| digital_arrest | ~400 | ~14 |
+| parcel_courier | ~90 | 5 |
+| investment_fraud | ~370 | 5 |
