@@ -1,0 +1,72 @@
+{
+  "request_id": "8f14e2b1-6c3a-4e2f-9a7d-2b5c9e1f4a70",
+  "input_type": "audio",
+  "asr_path": "groq",
+  "transcript": {
+    "text": "Sir this is Inspector Rakesh Sharma calling from CBI Mumbai cyber cell. Your Aadhaar number has been used in a money laundering case linked to a parcel booked in your name. This is a non-bailable offense sir. Do not disconnect this call or inform anyone including your family, this is a confidential investigation under digital arrest protocol. Please share your Aadhaar and PAN details for verification right now. To clear your name you need to transfer one lakh fifty thousand rupees to the RBI safe account for verification, it will be refunded in 24 hours. Install AnyDesk immediately so our verification officer can check your account.",
+    "segments": [
+      { "id": 0, "start": 0.0, "end": 5.8, "text": "Sir this is Inspector Rakesh Sharma calling from CBI Mumbai cyber cell." },
+      { "id": 1, "start": 5.8, "end": 12.4, "text": "Your Aadhaar number has been used in a money laundering case linked to a parcel booked in your name." },
+      { "id": 2, "start": 12.4, "end": 16.1, "text": "This is a non-bailable offense sir." },
+      { "id": 3, "start": 16.1, "end": 26.5, "text": "Do not disconnect this call or inform anyone including your family, this is a confidential investigation under digital arrest protocol." },
+      { "id": 4, "start": 26.5, "end": 32.9, "text": "Please share your Aadhaar and PAN details for verification right now." },
+      { "id": 5, "start": 32.9, "end": 44.2, "text": "To clear your name you need to transfer one lakh fifty thousand rupees to the RBI safe account for verification, it will be refunded in 24 hours." },
+      { "id": 6, "start": 44.2, "end": 50.0, "text": "Install AnyDesk immediately so our verification officer can check your account." }
+    ]
+  },
+  "classification": {
+    "family": "digital_arrest",
+    "confidence": 0.94,
+    "calibrated": true,
+    "all_probs": {
+      "digital_arrest": 0.94,
+      "kyc_bank_fraud": 0.02,
+      "parcel_courier": 0.02,
+      "tech_support": 0.01,
+      "refund_reward": 0.0,
+      "investment_fraud": 0.0,
+      "legitimate": 0.01
+    }
+  },
+  "stages": [
+    { "segment_id": 0, "stage": "s1_authority_claim", "confidence": 0.97 },
+    { "segment_id": 1, "stage": "s2_threat_urgency", "confidence": 0.88 },
+    { "segment_id": 2, "stage": "s2_threat_urgency", "confidence": 0.85 },
+    { "segment_id": 3, "stage": "s3_isolation", "confidence": 0.93 },
+    { "segment_id": 4, "stage": "s4_info_harvest", "confidence": 0.91 },
+    { "segment_id": 5, "stage": "s5_payment_demand", "confidence": 0.96 },
+    { "segment_id": 6, "stage": "s5_payment_demand", "confidence": 0.89 }
+  ],
+  "risk_score": 99,
+  "entities": {
+    "upi_ids": ["cbiverification@ybl"],
+    "phone_numbers": ["+919812345678"],
+    "amounts": ["₹1,50,000"],
+    "agencies": ["CBI", "Mumbai Police", "RBI"],
+    "banks_apps": ["AnyDesk"],
+    "links": []
+  },
+  "similar_scripts": [
+    {
+      "script_id": "ds_0042",
+      "family": "digital_arrest",
+      "similarity": 0.91,
+      "excerpt": "Sir I am calling from Mumbai Cyber Crime Branch regarding a parcel seized at the airport containing illegal substances und..."
+    },
+    {
+      "script_id": "ds_0117",
+      "family": "digital_arrest",
+      "similarity": 0.86,
+      "excerpt": "This is a video call from CBI headquarters, you are under digital arrest until this matter is resolved, do not disconnect ..."
+    }
+  ],
+  "complaint": {
+    "text_en": "I received a call on +919812345678 from a caller impersonating CBI/Mumbai Police/RBI officials, falsely claiming a non-bailable offense linked to my Aadhaar and a parcel booked in my name. The caller pressured me to stay on the call, withhold information from my family, share Aadhaar/PAN details, install remote access software (AnyDesk), and transfer ₹1,50,000 to a UPI ID (cbiverification@ybl) presented as an 'RBI safe account' for verification. This matches the known 'digital arrest' scam pattern.",
+    "category": "Online Financial Fraud",
+    "portal_url": "https://cybercrime.gov.in"
+  },
+  "actions": {
+    "helpline": "1930",
+    "sms_body": "SCAM ALERT: digital_arrest pattern detected, risk 99/100. Caller +919812345678 demanded Rs1,50,000 via UPI cbiverification@ybl. Call 1930 now."
+  }
+}

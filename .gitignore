@@ -52,3 +52,4 @@ wheels/
 **/venv/
 **/env/
 **/ENV/
+**/CLAUDE.md
