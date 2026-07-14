@@ -53,3 +53,5 @@ wheels/
 **/env/
 **/ENV/
 **/CLAUDE.md
+
+**/models

@@ -3,3 +3,5 @@ processed/*
 !processed/train.jsonl
 !processed/eval.jsonl
 .venv/
+
+**/models
