@@ -67,6 +67,10 @@ def _resolve_model_dir(*names):
     return None
 
 
+def _first_existing(*paths):
+    return next((path for path in paths if path is not None and path.exists()), None)
+
+
 def _softmax(x):
     x = x - np.max(x, axis=-1, keepdims=True)
     e = np.exp(x)
@@ -89,7 +93,7 @@ def load_models():
             _family_temperature = json.load(f).get("family_temperature", 1.0)
         _family_calibrated = True
 
-    stage_dir = _resolve_model_dir("stage_serving", "stage_int8")
+    stage_dir = _resolve_model_dir("stage_serving", "stage_onnx", "stage_int8")
     if stage_dir is not None:
         _stage_session = ort.InferenceSession(str(_onnx_file(stage_dir)))
         _stage_tokenizer = AutoTokenizer.from_pretrained(str(stage_dir))
@@ -99,9 +103,15 @@ def load_models():
         _embedder_session = ort.InferenceSession(str(_onnx_file(embedder_dir)))
         _embedder_tokenizer = AutoTokenizer.from_pretrained(str(embedder_dir))
 
-    faiss_path = MODELS_DIR / "faiss.index"
-    meta_path = MODELS_DIR / "scripts_meta.json"
-    if faiss_path.exists() and meta_path.exists():
+    faiss_path = _first_existing(
+        MODELS_DIR / "faiss.index",
+        embedder_dir / "faiss.index" if embedder_dir else None,
+    )
+    meta_path = _first_existing(
+        MODELS_DIR / "scripts_meta.json",
+        embedder_dir / "scripts_meta.json" if embedder_dir else None,
+    )
+    if faiss_path is not None and meta_path is not None:
         import faiss
         _faiss_index = faiss.read_index(str(faiss_path))
         with open(meta_path, encoding="utf-8") as f:
@@ -120,6 +130,8 @@ def _run_session(session, tokenizer, text, max_length):
     encoded = tokenizer(text, truncation=True, max_length=max_length, return_tensors="np")
     input_names = {i.name for i in session.get_inputs()}
     inputs = {k: v for k, v in encoded.items() if k in input_names}
+    if "token_type_ids" in input_names and "token_type_ids" not in inputs:
+        inputs["token_type_ids"] = np.zeros_like(encoded["input_ids"])
     outputs = session.run(None, inputs)
     return outputs[0][0], encoded
 
@@ -134,6 +146,8 @@ def _run_session_batch(session, tokenizer, texts, max_length):
     )
     input_names = {item.name for item in session.get_inputs()}
     inputs = {key: value for key, value in encoded.items() if key in input_names}
+    if "token_type_ids" in input_names and "token_type_ids" not in inputs:
+        inputs["token_type_ids"] = np.zeros_like(encoded["input_ids"])
     return session.run(None, inputs)[0]
 
 

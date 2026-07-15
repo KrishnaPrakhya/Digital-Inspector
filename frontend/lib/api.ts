@@ -102,6 +102,7 @@ export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 export const MAX_AUDIO_DURATION_SECONDS = 180;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:7860";
+const REQUEST_TIMEOUT_MS = 120_000;
 
 export class ApiError extends Error {
   status: number;
@@ -115,10 +116,29 @@ export class ApiError extends Error {
 
 async function parseJsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const detail = await res.text();
+    const raw = await res.text();
+    let detail = raw;
+    try {
+      const parsed = JSON.parse(raw) as { detail?: string };
+      detail = parsed.detail ?? raw;
+    } catch {}
     throw new ApiError(res.status, detail || res.statusText);
   }
   return (await res.json()) as T;
+}
+
+async function apiFetch(path: string, init?: RequestInit) {
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new ApiError(408, "The analysis took too long. The model service may be waking up; please retry.");
+    }
+    throw new ApiError(0, "Cannot reach the analysis service. Check the connection and try again.");
+  }
 }
 
 export async function analyzeAudio(
@@ -128,7 +148,7 @@ export async function analyzeAudio(
   const formData = new FormData();
   formData.append("audio", file, filename);
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/analyze/audio`, {
+  const res = await apiFetch("/api/v1/analyze/audio", {
     method: "POST",
     body: formData,
   });
@@ -137,7 +157,7 @@ export async function analyzeAudio(
 }
 
 export async function analyzeText(text: string): Promise<AnalyzeResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/analyze/text`, {
+  const res = await apiFetch("/api/v1/analyze/text", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -147,6 +167,12 @@ export async function analyzeText(text: string): Promise<AnalyzeResponse> {
 }
 
 export async function getHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${API_BASE_URL}/health`);
+  const res = await apiFetch("/health", { signal: AbortSignal.timeout(8_000) });
   return parseJsonOrThrow<HealthResponse>(res);
+}
+
+export async function searchSimilarScripts(query: string, limit = 6): Promise<SimilarScript[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const res = await apiFetch(`/api/v1/similar?${params}`);
+  return parseJsonOrThrow<SimilarScript[]>(res);
 }

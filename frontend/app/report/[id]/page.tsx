@@ -1,73 +1,72 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import type { AnalyzeResponse, PlaybookStage, ScamFamily } from "@/lib/api";
-import { getReport } from "@/lib/storage";
+import type { Entities, ScamFamily } from "@/lib/api";
+import { FAMILY_META, STAGE_META } from "@/lib/scam-content";
+import { getReport, type StoredReport } from "@/lib/storage";
 
-const FAMILY_NAMES: Record<ScamFamily, string> = {
-  digital_arrest: "Digital arrest scam",
-  kyc_bank_fraud: "KYC / bank fraud",
-  parcel_courier: "Parcel / courier scam",
-  tech_support: "Tech-support scam",
-  refund_reward: "Refund / reward scam",
-  investment_fraud: "Investment fraud",
-  legitimate: "No known scam pattern",
-};
-const STAGE_NAMES: Record<PlaybookStage, string> = {
-  s0_none: "No scam behavior",
-  s1_authority_claim: "Authority claim",
-  s2_threat_urgency: "Threat and urgency",
-  s3_isolation: "Isolation and secrecy",
-  s4_info_harvest: "Information harvesting",
-  s5_payment_demand: "Payment demand",
-};
+const ENTITY_LABELS: Record<string, string> = { upi_ids: "UPI IDs", phone_numbers: "Phone numbers", amounts: "Amounts", agencies: "Claimed agencies", banks_apps: "Banks, apps & couriers", links: "Links" };
 
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
-  const [report, setReport] = useState<AnalyzeResponse | null>(null);
+  const [report, setReport] = useState<StoredReport | null>(null);
   const [missing, setMissing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    getReport(params.id).then((value) => value ? setReport(value) : setMissing(true));
-  }, [params.id]);
-
-  const chips = useMemo(
+  useEffect(() => { getReport(params.id).then((value) => value ? setReport(value) : setMissing(true)); }, [params.id]);
+  const entityGroups = useMemo(
     () => report
-      ? (Object.entries(report.entities) as [string, string[]][]).flatMap(([kind, values]) => values.map((value) => ({ kind, value })))
+      ? (Object.entries(report.entities) as [keyof Entities, string[]][]).filter(([, values]) => values.length)
       : [],
     [report],
   );
+  if (!report) return <main className="page-shell loading">{missing ? <div className="empty-state panel"><div className="empty-icon">?</div><h2>Report not found on this device.</h2><p>Reports live only in this browser&apos;s IndexedDB. They are not synced across devices.</p><Link className="button primary" href="/analyze">Run a new analysis</Link></div> : "Loading the local report…"}</main>;
 
-  if (!report) return <main className="page-shell loading">{missing ? "This report is not stored on this device. Run a new analysis first." : "Loading report…"}</main>;
+  const current = report;
+  const family = FAMILY_META[current.classification.family];
+  const safe = current.classification.family === "legitimate";
+  const highestStage = current.stages.reduce((best, item) => STAGE_META[item.stage].order > STAGE_META[best].order ? item.stage : best, "s0_none" as keyof typeof STAGE_META);
+  const sortedProbabilities = Object.entries(current.classification.all_probs).sort((a, b) => b[1] - a[1]) as [ScamFamily, number][];
 
-  const currentReport = report;
-  const safe = report.classification.family === "legitimate";
+  async function copyComplaint() { await navigator.clipboard.writeText(current.complaint.text_en); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }
   async function downloadPdf() {
-    const { jsPDF } = await import("jspdf");
-    const pdf = new jsPDF();
-    pdf.setFontSize(18); pdf.text("Digital Inspector — Complaint Draft", 18, 20);
-    pdf.setFontSize(10); pdf.text(`Reference: ${currentReport.request_id}`, 18, 29);
-    pdf.setFontSize(12); pdf.text(pdf.splitTextToSize(currentReport.complaint.text_en || "No complaint generated for a legitimate call.", 174), 18, 42);
-    pdf.save(`digital-inspector-${currentReport.request_id.slice(0, 8)}.pdf`);
+    const { jsPDF } = await import("jspdf"); const pdf = new jsPDF();
+    pdf.setFillColor(9, 10, 13); pdf.rect(0, 0, 210, 38, "F"); pdf.setTextColor(255, 255, 255); pdf.setFontSize(20); pdf.text("Digital Inspector", 18, 18); pdf.setFontSize(10); pdf.text("Cybercrime complaint draft", 18, 27);
+    pdf.setTextColor(25, 25, 25); pdf.setFontSize(10); pdf.text(`Reference: ${current.request_id}`, 18, 47); pdf.text(`Detected pattern: ${family.name}`, 18, 54); pdf.text(`Risk score: ${current.risk_score}/100`, 18, 61);
+    pdf.setFontSize(12); pdf.text(pdf.splitTextToSize(current.complaint.text_en || "No complaint generated for a legitimate call.", 174), 18, 75);
+    pdf.save(`digital-inspector-${current.request_id.slice(0, 8)}.pdf`);
+  }
+  async function shareReport() {
+    const text = current.actions.sms_body;
+    if (navigator.share) await navigator.share({ title: "Digital Inspector alert", text });
+    else await navigator.clipboard.writeText(text);
   }
 
-  return (
-    <main className="page-shell">
-      <div className="eyebrow"><span /> Analysis report</div>
-      <p className="muted">Reference {report.request_id}</p>
-      <div className="report-top">
-        <section className={`panel verdict ${safe ? "safe" : ""}`}><div className="verdict-label">{safe ? "No known scam pattern" : "Scam pattern detected"}</div><h1>{FAMILY_NAMES[report.classification.family]}</h1><p className="confidence">{(report.classification.confidence * 100).toFixed(1)}% confidence · {report.classification.calibrated ? "temperature calibrated" : "uncalibrated model output"} · {report.asr_path ? `${report.asr_path} ASR` : "text input"}</p><p className="muted">{safe ? "Remain cautious if the caller asks for OTPs, remote access, or payment." : "Do not transfer money or share credentials. Preserve the evidence and report quickly."}</p></section>
-        <section className="panel"><div className="risk-ring" style={{ "--risk": report.risk_score } as React.CSSProperties}><strong>{report.risk_score}</strong></div><p className="muted" style={{ textAlign: "center" }}>Risk score / 100</p></section>
+  return <main className="page-shell report-page">
+    <div className="report-breadcrumb"><Link href="/dashboard">My reports</Link><span>/</span><span>{current.request_id.slice(0, 8).toUpperCase()}</span><div><Link href="/analyze">New analysis</Link><button onClick={shareReport}>Share report ↗</button></div></div>
+    <section className={`verdict-hero ${safe ? "safe" : "danger"}`} style={{ "--family": family.color } as React.CSSProperties}>
+      <div className="verdict-copy"><div className="verdict-label"><i />{safe ? "No known scam pattern detected" : "Scam pattern detected"}</div><h1>{family.name}</h1><p>{safe ? "The evidence resembles a legitimate interaction, but remain alert if the caller changes course or asks for credentials, remote access, or payment." : `${family.short}. Stop contact, preserve the evidence, and do not send money or credentials.`}</p><div className="verdict-meta"><span><b>{Math.round(current.classification.confidence * 100)}%</b> family confidence</span><span><b>{STAGE_META[highestStage].name}</b> highest stage</span><span><b>{current.asr_path?.toUpperCase() ?? "TEXT"}</b> input path</span></div>{!current.classification.calibrated && <div className="calibration-note">Confidence is raw model output; calibration artifact is not loaded.</div>}</div>
+      <div className="risk-block"><div className="risk-ring" style={{ "--risk": current.risk_score } as React.CSSProperties}><div><strong>{current.risk_score}</strong><span>/ 100</span></div></div><b>{current.risk_score >= 80 ? "Critical risk" : current.risk_score >= 55 ? "High risk" : current.risk_score >= 30 ? "Elevated risk" : "Low risk"}</b><small>Deterministic family × stage × evidence score</small></div>
+    </section>
+
+    {!safe && <section className="action-command"><div className="command-icon">!</div><div><span>Golden-hour action</span><h2>{entityGroups.some(([key]) => key === "amounts" || key === "upi_ids") ? "Payment evidence detected. Call 1930 now." : "Preserve this evidence and stop contact."}</h2><p>Never call a number supplied by the suspicious caller. Use the official helpline and bank channels.</p></div><div><a className="button primary" href="tel:1930">Call 1930</a><a className="button light-button" href="https://cybercrime.gov.in" target="_blank" rel="noreferrer">Report online ↗</a></div></section>}
+
+    <div className="report-layout">
+      <div className="report-main">
+        <section className="panel report-section"><div className="panel-title"><div><span>Conversation intelligence</span><h2>Playbook timeline</h2></div><small>{current.stages.length} utterances</small></div>{current.stages.every((stage) => stage.confidence === 0) ? <div className="notice">The stage model was unavailable for this analysis.</div> : <div className="rich-timeline">{current.stages.map((stage, index) => { const segment = current.transcript.segments.find((item) => item.id === stage.segment_id); const meta = STAGE_META[stage.stage]; return <article className={stage.stage === "s0_none" ? "benign" : "flagged"} key={`${stage.segment_id}-${index}`}><div className="timeline-rail"><i>{index + 1}</i><span /></div><div><header><b>{meta.name}</b><span>{Math.round(stage.confidence * 100)}%</span></header><p>“{segment?.text}”</p><small>{meta.description}</small></div></article>; })}</div>}</section>
+        <section className="panel report-section"><div className="panel-title"><div><span>Verbatim extraction</span><h2>Actionable evidence</h2></div><small>Regex + dictionaries</small></div>{entityGroups.length ? <div className="evidence-groups">{entityGroups.map(([kind, values]) => <div key={kind}><label>{ENTITY_LABELS[kind]}</label><div className="chip-row">{values.map((value) => <button className="chip" title="Copy" onClick={() => navigator.clipboard.writeText(value)} key={value}>{value}<span>⧉</span></button>)}</div></div>)}</div> : <div className="empty-inline">No payment handle, amount, phone number, agency, app, or link was found.</div>}</section>
+        <section className="panel report-section"><div className="panel-title"><div><span>Source evidence</span><h2>Transcript</h2></div><small>{current.transcript.text.length.toLocaleString()} characters</small></div><div className="transcript-box">{current.transcript.segments.map((segment) => <p key={segment.id}><span>{current.input_type === "audio" ? `${segment.start.toFixed(1)}s` : String(segment.id + 1).padStart(2, "0")}</span>{segment.text}</p>)}</div></section>
       </div>
 
-      <div className="report-grid">
-        <section className="panel"><h2>Playbook timeline</h2>{report.stages.every((stage) => stage.confidence === 0) && <p className="muted">The stage model is not loaded yet; family detection remains active.</p>}<div className="timeline">{report.stages.map((stage) => { const segment = report.transcript.segments.find((item) => item.id === stage.segment_id); return <div className="timeline-item" key={stage.segment_id}><i className="timeline-dot" /><div><strong>{STAGE_NAMES[stage.stage]}</strong><p>{segment?.text}</p>{stage.confidence > 0 && <small className="muted">{(stage.confidence * 100).toFixed(0)}% confidence</small>}</div></div>; })}</div></section>
-        <section className="panel"><h2>Extracted evidence</h2>{chips.length ? <div className="chip-row">{chips.map((chip) => <span className="chip" title={chip.kind} key={`${chip.kind}-${chip.value}`}>{chip.value}</span>)}</div> : <p className="muted">No payment handles, phone numbers, amounts, agencies, apps, or links were extracted.</p>}<h3>Closest known scripts</h3>{report.similar_scripts.length ? report.similar_scripts.map((script) => <p key={script.script_id}><strong>{(script.similarity * 100).toFixed(0)}% · {FAMILY_NAMES[script.family]}</strong><br /><span className="muted">{script.excerpt}</span></p>) : <p className="muted">Similarity index is not loaded yet.</p>}</section>
-        <section className="panel wide"><h2>Act now</h2><div className="action-row"><a className="button primary" href="tel:1930">Call 1930</a><button className="button secondary" onClick={downloadPdf} disabled={!report.complaint.text_en}>Download complaint PDF</button><button className="button secondary" onClick={() => navigator.clipboard.writeText(report.complaint.text_en)} disabled={!report.complaint.text_en}>Copy for portal</button><a className="button secondary" href={`sms:?&body=${encodeURIComponent(report.actions.sms_body)}`}>Share by SMS</a><a className="button secondary" href={report.complaint.portal_url} target="_blank" rel="noreferrer">Open cybercrime.gov.in</a></div>{report.complaint.text_en && <div className="complaint" style={{ marginTop: 18 }}>{report.complaint.text_en}</div>}</section>
-        <section className="panel wide"><h2>Transcript</h2><div className="complaint">{report.transcript.text}</div></section>
-      </div>
-    </main>
-  );
+      <aside className="report-aside">
+        <section className="panel report-section probability-panel"><div className="panel-title"><div><span>Model distribution</span><h2>Family probabilities</h2></div></div>{sortedProbabilities.map(([id, probability]) => <div className="probability-row" key={id}><div><span>{FAMILY_META[id].name}</span><b>{Math.round(probability * 100)}%</b></div><i><span style={{ width: `${probability * 100}%`, background: FAMILY_META[id].color }} /></i></div>)}</section>
+        <section className="panel report-section"><div className="panel-title"><div><span>E5 retrieval</span><h2>Closest known scripts</h2></div></div>{current.similar_scripts.length ? <div className="similar-list">{current.similar_scripts.map((script, index) => <article key={script.script_id}><div><i>{index + 1}</i><span style={{ color: FAMILY_META[script.family].color }}>{FAMILY_META[script.family].name}</span><b>{Math.round(script.similarity * 100)}%</b></div><p>{script.excerpt}</p><small>{script.script_id}</small></article>)}</div> : <p className="muted">The similarity index was unavailable for this report.</p>}</section>
+        {current.complaint.text_en && <section className="panel report-section complaint-panel"><div className="panel-title"><div><span>Deterministic template</span><h2>Complaint draft</h2></div></div><p>{current.complaint.text_en}</p><div className="stack-actions"><button className="button primary" onClick={downloadPdf}>Download PDF</button><button className="button secondary" onClick={copyComplaint}>{copied ? "Copied ✓" : "Copy for portal"}</button></div></section>}
+      </aside>
+    </div>
+    <div className="report-final-actions"><span>Reference {current.request_id}</span><div><Link href="/dashboard">View local history</Link><Link href="/analyze">Analyze more evidence →</Link></div></div>
+  </main>;
 }

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { AppProviders } from "@/components/AppProviders";
+import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
 
@@ -14,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body><SiteHeader />{children}</body>
+      <body><AppProviders><SiteHeader /><div className="app-content">{children}</div><SiteFooter /></AppProviders></body>
     </html>
   );
 }

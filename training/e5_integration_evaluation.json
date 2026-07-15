@@ -1,0 +1,38 @@
+{
+  "artifact": "models/e5_int8/model_quantized.onnx",
+  "precision": "dynamic_int8",
+  "model_size_mb": 388.08,
+  "index": {
+    "type": "IndexFlatIP",
+    "dimension": 384,
+    "vectors": 32544,
+    "metadata_rows": 32544,
+    "aligned": true
+  },
+  "local_cpu": {
+    "three_model_startup_seconds": 14.207,
+    "first_query_milliseconds": 57.13,
+    "warm_query_milliseconds": [13.04, 12.54, 11.85]
+  },
+  "retrieval_checks": [
+    {
+      "query": "Mumbai Police says my parcel contains drugs and demands a safe account transfer",
+      "top_family": "digital_arrest",
+      "top_similarity": 0.8831
+    },
+    {
+      "query": "Your KYC expires today, share OTP to unblock SBI account",
+      "top_family": "kyc_bank_fraud",
+      "top_similarity": 0.8991
+    },
+    {
+      "query": "Hello, confirming your dentist appointment tomorrow",
+      "top_family": "legitimate",
+      "top_similarity": 0.9026
+    }
+  ],
+  "notes": [
+    "FAISS passage vectors were produced by the original GPU E5 encoder and queries by its INT8 ONNX export.",
+    "Similarity results are supporting evidence; the family classifier remains the verdict source."
+  ]
+}

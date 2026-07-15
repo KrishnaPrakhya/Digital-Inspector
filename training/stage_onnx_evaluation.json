@@ -1,0 +1,28 @@
+{
+  "artifact": "models/stage_onnx/model.onnx",
+  "precision": "fp32",
+  "model_size_mb": 537.04,
+  "eval_description": "18% of usable dialogue lineages; BothBosu plus generated playbook calls",
+  "rows": 1766,
+  "support": {
+    "s0_none": 1193,
+    "s1_authority_claim": 157,
+    "s2_threat_urgency": 123,
+    "s3_isolation": 65,
+    "s4_info_harvest": 100,
+    "s5_payment_demand": 128
+  },
+  "accuracy": 0.8714609286523216,
+  "macro_f1": 0.733686130502592,
+  "always_s0_accuracy": 0.6755379388448471,
+  "false_escalation_rate_s0": 0.05699916177703269,
+  "milliseconds_per_row_cpu_batch_64": 37.60657021509523,
+  "per_stage_f1": {
+    "s0_none": 0.948566610455312,
+    "s1_authority_claim": 0.7863777089783281,
+    "s2_threat_urgency": 0.7244094488188977,
+    "s3_isolation": 0.528,
+    "s4_info_harvest": 0.7070707070707071,
+    "s5_payment_demand": 0.7076923076923077
+  }
+}

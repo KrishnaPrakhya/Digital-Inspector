@@ -15,9 +15,10 @@ Set `GROQ_API_KEY` for primary Whisper transcription. If Groq is unavailable, `f
 The expected serving artifacts are:
 
 - `models/family_serving/model.onnx` and tokenizer files
-- `models/stage_serving/model.onnx` and tokenizer files
+- `models/stage_serving/model.onnx` (or the current `stage_onnx` export) and tokenizer files
 - `models/e5_serving/model.onnx` and tokenizer files
-- `models/calibration.json`, `models/faiss.index`, `models/scripts_meta.json`
+- `models/calibration.json`
+- `models/faiss.index` and `models/scripts_meta.json` (also accepted inside the selected E5 model directory)
 
 Missing stage or similarity artifacts are reported as `false` by `/health`; family analysis continues when its model is present.
 
