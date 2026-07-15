@@ -5,8 +5,13 @@
 .uv-cache
 **/.next
 **/node_modules
-data/raw
-data/processed
+**/__pycache__
+**/.env
+**/*.pdf
+backend/models
+backend/mocks
+models
+data
 training
 frontend
 *.log

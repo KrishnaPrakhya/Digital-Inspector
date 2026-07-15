@@ -1,0 +1,52 @@
+name: digital-inspector
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        MODEL_REPO: ${MODEL_REPO:-krishna-prakhya27/digital-inspector-models}
+        MODEL_REVISION: ${MODEL_REVISION:-f6b99222292da6face723a2f3682c5b959e8d6ab}
+        LOCAL_ASR_REPO: ${LOCAL_ASR_REPO:-Systran/faster-whisper-small}
+        LOCAL_ASR_REVISION: ${LOCAL_ASR_REVISION:-536b0662742c02347bc0e980a01041f333bce120}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MODELS_DIR: /app/models
+      LOCAL_ASR_MODEL: /app/models/faster-whisper-small
+      GIT_SHA: ${GIT_SHA:-digitalocean}
+    expose:
+      - "7860"
+    mem_limit: 6g
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

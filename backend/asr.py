@@ -18,7 +18,8 @@ def _ensure_local_asr():
     global _local_asr
     if _local_asr is None:
         from faster_whisper import WhisperModel
-        _local_asr = WhisperModel("small", device="cpu", compute_type="int8")
+        model_path = os.environ.get("LOCAL_ASR_MODEL", "small")
+        _local_asr = WhisperModel(model_path, device="cpu", compute_type="int8")
     return _local_asr
 
 
