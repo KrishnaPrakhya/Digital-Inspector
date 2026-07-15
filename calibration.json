@@ -1,0 +1,6 @@
+{
+  "family_temperature": 1.880798578262329,
+  "ece_before": 0.09969453276067539,
+  "ece_after": 0.08641602466071859,
+  "fitted_on": "validation split carved from train by lineage"
+}
