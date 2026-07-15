@@ -52,7 +52,7 @@ FROM_SCRATCH_GENERIC_SYSTEM_PROMPT = """You generate synthetic training dialogue
 Each dialogue must be multi-turn (8-14 turns), alternating suspect/innocent, plausible and internally consistent. Vary names, amounts, and whether it's English, Hinglish-romanized, or Hinglish-Devanagari across the batch. Reply with a JSON object: {{"dialogues": [{{"turns": [{{"speaker": "suspect", "text": "..."}}, ...]}}, ...]}} with exactly {n} dialogues."""
 
 FAMILY_DESCRIPTIONS = {
-    "parcel_courier": "The scammer impersonates FedEx/customs/courier staff, claims a parcel in the victim's name was intercepted containing drugs or illegal goods, and pressures the victim toward a 'clearance fee' payment or personal-detail verification, sometimes escalating into a fake police transfer.",
+    "parcel_courier": "The scammer impersonates COURIER OR CUSTOMS-CLEARANCE STAFF ONLY (FedEx, DHL, DTDC, BlueDart, India Post, Delhivery, a customs clearance desk), claims a parcel addressed to the victim is being held for unpaid duty, a wrong address, or a restricted item, and pressures the victim to pay a small clearance/redelivery fee or 'verify' address and ID details. CRITICAL: never mention police, CBI, arrest, warrant, custody, court, an officer/inspector/constable, or a 'safe account' — that is the digital_arrest class, and mixing the two makes both unlearnable.",
     "investment_fraud": "The scammer runs a trading/crypto/task-based 'easy money' scheme: initial small payouts to build trust, pressure to deposit increasing amounts into a platform or wallet, fake dashboards showing growing 'returns', and eventual refusal/inability to withdraw.",
 }
 

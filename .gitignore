@@ -14,7 +14,7 @@
 /coverage
 
 # next.js
-/.next/
+**/.next/
 /out/
 
 # production
@@ -49,9 +49,14 @@ wheels/
 *.egg-info
 
 **/.venv/
+.eval-venv/
+.uv-cache/
+.uv-python/
 **/venv/
 **/env/
 **/ENV/
 **/CLAUDE.md
 
 **/models
+
+**/AGENTS.md

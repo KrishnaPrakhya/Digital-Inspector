@@ -3,13 +3,14 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("USE_TF", "0")
-os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("USE_TORCH", "0")
 
 import numpy as np
 import onnxruntime as ort
 from transformers import AutoTokenizer
 
-MODELS_DIR = Path(os.environ.get("MODELS_DIR", Path(__file__).parent / "models"))
+_DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
+MODELS_DIR = Path(os.environ.get("MODELS_DIR", _DEFAULT_MODELS_DIR))
 
 FAMILY_IDS = [
     "digital_arrest",
@@ -36,6 +37,7 @@ STAGE_MAX_LENGTH = 128
 _family_session = None
 _family_tokenizer = None
 _family_temperature = 1.0
+_family_calibrated = False
 
 _stage_session = None
 _stage_tokenizer = None
@@ -46,6 +48,25 @@ _faiss_index = None
 _scripts_meta = None
 
 
+ONNX_FILENAMES = ("model.onnx", "model_quantized.onnx")
+
+
+def _onnx_file(model_dir: Path):
+    for name in ONNX_FILENAMES:
+        candidate = model_dir / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_model_dir(*names):
+    for name in names:
+        candidate = MODELS_DIR / name
+        if candidate.is_dir() and _onnx_file(candidate) is not None:
+            return candidate
+    return None
+
+
 def _softmax(x):
     x = x - np.max(x, axis=-1, keepdims=True)
     e = np.exp(x)
@@ -53,28 +74,29 @@ def _softmax(x):
 
 
 def load_models():
-    global _family_session, _family_tokenizer, _family_temperature
+    global _family_session, _family_tokenizer, _family_temperature, _family_calibrated
     global _stage_session, _stage_tokenizer
     global _embedder_session, _embedder_tokenizer, _faiss_index, _scripts_meta
 
-    family_dir = MODELS_DIR / "family_int8"
-    if (family_dir / "model_quantized.onnx").exists():
-        _family_session = ort.InferenceSession(str(family_dir / "model_quantized.onnx"))
+    family_dir = _resolve_model_dir("family_serving", "family_int8")
+    if family_dir is not None:
+        _family_session = ort.InferenceSession(str(_onnx_file(family_dir)))
         _family_tokenizer = AutoTokenizer.from_pretrained(str(family_dir))
 
     calibration_path = MODELS_DIR / "calibration.json"
     if calibration_path.exists():
-        with open(calibration_path) as f:
+        with open(calibration_path, encoding="utf-8") as f:
             _family_temperature = json.load(f).get("family_temperature", 1.0)
+        _family_calibrated = True
 
-    stage_dir = MODELS_DIR / "stage_int8"
-    if (stage_dir / "model_quantized.onnx").exists():
-        _stage_session = ort.InferenceSession(str(stage_dir / "model_quantized.onnx"))
+    stage_dir = _resolve_model_dir("stage_serving", "stage_int8")
+    if stage_dir is not None:
+        _stage_session = ort.InferenceSession(str(_onnx_file(stage_dir)))
         _stage_tokenizer = AutoTokenizer.from_pretrained(str(stage_dir))
 
-    embedder_dir = MODELS_DIR / "e5_int8"
-    if (embedder_dir / "model_quantized.onnx").exists():
-        _embedder_session = ort.InferenceSession(str(embedder_dir / "model_quantized.onnx"))
+    embedder_dir = _resolve_model_dir("e5_serving", "e5_int8")
+    if embedder_dir is not None:
+        _embedder_session = ort.InferenceSession(str(_onnx_file(embedder_dir)))
         _embedder_tokenizer = AutoTokenizer.from_pretrained(str(embedder_dir))
 
     faiss_path = MODELS_DIR / "faiss.index"
@@ -102,6 +124,19 @@ def _run_session(session, tokenizer, text, max_length):
     return outputs[0][0], encoded
 
 
+def _run_session_batch(session, tokenizer, texts, max_length):
+    encoded = tokenizer(
+        texts,
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="np",
+    )
+    input_names = {item.name for item in session.get_inputs()}
+    inputs = {key: value for key, value in encoded.items() if key in input_names}
+    return session.run(None, inputs)[0]
+
+
 def classify_family(text: str) -> dict:
     if _family_session is None:
         raise RuntimeError("family model not loaded")
@@ -112,7 +147,7 @@ def classify_family(text: str) -> dict:
     return {
         "family": FAMILY_IDS[top_idx],
         "confidence": round(float(probs[top_idx]), 4),
-        "calibrated": True,
+        "calibrated": _family_calibrated,
         "all_probs": all_probs,
     }
 
@@ -120,9 +155,16 @@ def classify_family(text: str) -> dict:
 def classify_stages(segments: list) -> list:
     if _stage_session is None:
         return [{"segment_id": s["id"], "stage": "s0_none", "confidence": 0.0} for s in segments]
+    if not segments:
+        return []
+    logits_batch = _run_session_batch(
+        _stage_session,
+        _stage_tokenizer,
+        [segment["text"] for segment in segments],
+        STAGE_MAX_LENGTH,
+    )
     results = []
-    for seg in segments:
-        logits, _ = _run_session(_stage_session, _stage_tokenizer, seg["text"], STAGE_MAX_LENGTH)
+    for seg, logits in zip(segments, logits_batch):
         probs = _softmax(logits)
         top_idx = int(np.argmax(probs))
         results.append({

@@ -1,0 +1,12 @@
+.git
+.claude
+**/.venv
+.eval-venv
+.uv-cache
+**/.next
+**/node_modules
+data/raw
+data/processed
+training
+frontend
+*.log

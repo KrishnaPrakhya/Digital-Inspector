@@ -22,6 +22,10 @@ def _ensure_local_asr():
     return _local_asr
 
 
+def local_asr_loaded() -> bool:
+    return _local_asr is not None
+
+
 def _transcribe_groq(audio_bytes: bytes, filename: str) -> dict:
     client = _get_groq_client()
     result = client.audio.transcriptions.create(
@@ -29,15 +33,15 @@ def _transcribe_groq(audio_bytes: bytes, filename: str) -> dict:
         model="whisper-large-v3-turbo",
         response_format="verbose_json",
     )
-    segments = [
-        {
+    segments = []
+    for i, segment in enumerate(result.segments or []):
+        get_value = segment.get if isinstance(segment, dict) else lambda key: getattr(segment, key)
+        segments.append({
             "id": i,
-            "start": round(float(seg["start"]), 2),
-            "end": round(float(seg["end"]), 2),
-            "text": seg["text"].strip(),
-        }
-        for i, seg in enumerate(result.segments or [])
-    ]
+            "start": round(float(get_value("start")), 2),
+            "end": round(float(get_value("end")), 2),
+            "text": get_value("text").strip(),
+        })
     return {"text": result.text.strip(), "segments": segments}
 
 

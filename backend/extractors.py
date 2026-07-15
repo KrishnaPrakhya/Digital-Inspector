@@ -63,8 +63,17 @@ def extract_links(text: str) -> list:
 
 
 def _extract_dictionary_terms(text: str, terms: list) -> list:
-    lowered = text.lower()
-    return sorted({term for term in terms if term.lower() in lowered})
+    matched = {
+        term
+        for term in terms
+        if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, re.IGNORECASE)
+    }
+    # Prefer the most specific dictionary value ("Mumbai Police" over "Police").
+    return sorted(
+        term
+        for term in matched
+        if not any(term.lower() != other.lower() and term.lower() in other.lower() for other in matched)
+    )
 
 
 def extract_agencies(text: str) -> list:

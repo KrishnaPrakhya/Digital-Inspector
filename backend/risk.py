@@ -7,10 +7,24 @@ STAGE_WEIGHTS = {
     "s5_payment_demand": 1.0,
 }
 
+SCAM_FAMILIES = {
+    "digital_arrest",
+    "kyc_bank_fraud",
+    "parcel_courier",
+    "tech_support",
+    "refund_reward",
+    "investment_fraud",
+}
+
 REMOTE_ACCESS_APPS = {"anydesk", "teamviewer"}
 
 
-def compute_risk_score(family_confidence: float, stages: list, entities: dict) -> int:
+def compute_risk_score(all_probs: dict, stages: list, entities: dict) -> int:
+    max_scam_prob = max(
+        (p for family, p in all_probs.items() if family in SCAM_FAMILIES),
+        default=0.0,
+    )
+
     if stages:
         stage_weight = max(STAGE_WEIGHTS.get(s["stage"], STAGE_WEIGHTS["s0_none"]) for s in stages)
     else:
@@ -21,5 +35,5 @@ def compute_risk_score(family_confidence: float, stages: list, entities: dict) -
     entity_bonus += 5 * len(entities["amounts"])
     entity_bonus += 5 * sum(1 for b in entities["banks_apps"] if b.lower() in REMOTE_ACCESS_APPS)
 
-    risk = 100 * family_confidence * stage_weight + entity_bonus
+    risk = 100 * max_scam_prob * stage_weight + entity_bonus
     return int(min(100, round(risk)))

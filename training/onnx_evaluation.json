@@ -1,0 +1,27 @@
+{
+  "eval_kind": "real_holdout",
+  "rows": 138,
+  "classes_present": 6,
+  "fp32": {
+    "model_size_mb": 537.04,
+    "accuracy": 0.8913043478260869,
+    "macro_f1": 0.7938070827230618,
+    "scam_recall": 0.9433962264150944,
+    "false_alarm_rate_legitimate": 0.011764705882352941,
+    "milliseconds_per_row_cpu_batch_8": 33.92903333313871,
+    "serving_decision": "accepted"
+  },
+  "dynamic_int8_candidate": {
+    "model_size_mb": 416.71,
+    "accuracy": 0.8768115942028986,
+    "macro_f1": 0.7558555754634185,
+    "scam_recall": 0.9433962264150944,
+    "false_alarm_rate_legitimate": 0.03529411764705882,
+    "milliseconds_per_row_cpu_batch_8": 21.17516231837858,
+    "serving_decision": "rejected: macro-F1 loss exceeded 0.03 and false alarms increased"
+  },
+  "notes": [
+    "The real-holdout set has no tech_support rows, so headline macro-F1 covers the six represented classes.",
+    "Latency was measured locally on CPU after one warm-up inference; deployment hardware will differ."
+  ]
+}

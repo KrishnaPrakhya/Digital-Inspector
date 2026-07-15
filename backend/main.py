@@ -15,7 +15,7 @@ import classify
 import complaint as complaint_engine
 import extractors
 import risk
-from asr import transcribe_audio
+from asr import local_asr_loaded, transcribe_audio
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 ALLOWED_AUDIO_TYPES = {
@@ -77,7 +77,7 @@ def build_response(input_type: str, asr_path, transcript: dict) -> dict:
     classification = classify.classify_family(transcript["text"])
     stages = classify.classify_stages(transcript["segments"])
     entities = extractors.extract_entities(transcript["text"])
-    risk_score = risk.compute_risk_score(classification["confidence"], stages, entities)
+    risk_score = risk.compute_risk_score(classification["all_probs"], stages, entities)
     similar_scripts = classify.find_similar_scripts(transcript["text"])
     complaint_obj = complaint_engine.generate_complaint(classification["family"], entities)
 
@@ -104,7 +104,10 @@ def health():
     return {
         "status": "ok",
         "models": classify.models_status(),
-        "asr": {"groq_configured": bool(os.environ.get("GROQ_API_KEY")), "local_loaded": False},
+        "asr": {
+            "groq_configured": bool(os.environ.get("GROQ_API_KEY")),
+            "local_loaded": local_asr_loaded(),
+        },
         "version": os.environ.get("GIT_SHA", "dev"),
     }
 
