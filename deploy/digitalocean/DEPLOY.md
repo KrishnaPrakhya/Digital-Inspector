@@ -70,6 +70,7 @@ pinned model repository and revision unchanged.
 
 ```bash
 cd /opt/digital-inspector/deploy/digitalocean
+export GIT_SHA="$(git -C /opt/digital-inspector rev-parse --short HEAD)"
 docker compose up -d --build
 docker compose ps
 docker compose logs -f api
@@ -125,6 +126,7 @@ docker compose logs --tail=200 api
 docker stats --no-stream
 docker compose restart api
 git pull --ff-only
+export GIT_SHA="$(git -C /opt/digital-inspector rev-parse --short HEAD)"
 docker compose up -d --build
 ```
 

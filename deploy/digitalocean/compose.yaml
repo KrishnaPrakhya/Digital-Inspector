@@ -16,14 +16,15 @@ services:
     environment:
       MODELS_DIR: /app/models
       LOCAL_ASR_MODEL: /app/models/faster-whisper-small
-      GIT_SHA: ${GIT_SHA:-digitalocean}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      AUDIO_CONCURRENCY: ${AUDIO_CONCURRENCY:-2}
       PULSE_DATABASE_URL: postgresql://pulse:${POSTGRES_PASSWORD}@db:5432/pulse
     depends_on:
       db:
         condition: service_healthy
     expose:
       - "7860"
-    mem_limit: 6g
+    mem_limit: 3.2g
     logging:
       options:
         max-size: "10m"

@@ -1,8 +1,12 @@
+import asyncio
 import os
 import re
+import threading
 import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -19,6 +23,7 @@ import complaint as complaint_engine
 import extractors
 import pulse
 import risk
+import safety
 from asr import local_asr_loaded, transcribe_audio
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
@@ -26,9 +31,14 @@ ALLOWED_AUDIO_TYPES = {
     "audio/webm", "audio/ogg", "audio/mp4", "audio/x-m4a",
     "audio/m4a", "audio/wav", "audio/x-wav", "audio/mpeg",
 }
+ALLOWED_AUDIO_EXTENSIONS = {".webm", ".ogg", ".mp4", ".m4a", ".wav", ".mp3"}
+AUDIO_CONCURRENCY = max(1, int(os.environ.get("AUDIO_CONCURRENCY", "2")))
+_audio_slots = asyncio.Semaphore(AUDIO_CONCURRENCY)
+_rate_windows = defaultdict(deque)
+_rate_lock = threading.Lock()
 
 SENTENCE_SPLIT_PATTERN = re.compile(
-    r"(?<!Rs\.)(?<!Mr\.)(?<!Mrs\.)(?<!Dr\.)(?<=[.!?])\s+",
+    r"(?<!Rs\.)(?<!Mr\.)(?<!Mrs\.)(?<!Dr\.)(?<=[.!?।])\s+",
     re.IGNORECASE,
 )
 
@@ -79,6 +89,7 @@ async def add_diagnostics(request: Request, call_next):
     response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter() - started) * 1000:.1f}"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=()"
     return response
 
 
@@ -118,6 +129,41 @@ def split_sentences(text: str) -> list:
     return [{"id": i, "start": 0.0, "end": 0.0, "text": s} for i, s in enumerate(segments)]
 
 
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(
+    request: Request,
+    bucket: str,
+    limit: int,
+    window_seconds: int,
+) -> None:
+    now = time.monotonic()
+    key = (_client_ip(request), bucket)
+    with _rate_lock:
+        events = _rate_windows[key]
+        cutoff = now - window_seconds
+        while events and events[0] <= cutoff:
+            events.popleft()
+        if len(events) >= limit:
+            retry_after = max(1, int(window_seconds - (now - events[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please wait before trying again.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        events.append(now)
+
+
+def _analysis_source(request: Request) -> str:
+    source = request.headers.get("x-analysis-source", "user").strip().lower()
+    return source if source in {"user", "demo", "automated_test"} else "user"
+
+
 def build_sms_body(family: str, risk_score: int, entities: dict) -> str:
     parts = [f"SCAM ALERT: {family} pattern detected, risk {risk_score}/100."]
     detail = []
@@ -134,6 +180,12 @@ def build_sms_body(family: str, risk_score: int, entities: dict) -> str:
 def build_response(input_type: str, asr_path, transcript: dict) -> dict:
     classification = classify.classify_family(transcript["text"])
     stages = classify.classify_stages(transcript["segments"])
+    classification, stages = safety.apply_safety_policy(
+        transcript["text"],
+        transcript["segments"],
+        classification,
+        stages,
+    )
     entities = extractors.extract_entities(transcript["text"])
     risk_score = risk.compute_risk_score(classification["all_probs"], stages, entities)
     similar_scripts = classify.find_similar_scripts(transcript["text"])
@@ -157,6 +209,22 @@ def build_response(input_type: str, asr_path, transcript: dict) -> dict:
     }
 
 
+@app.get("/", include_in_schema=False)
+def root():
+    return {
+        "name": "Digital Inspector API",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+        "version": os.environ.get("GIT_SHA", "dev"),
+    }
+
+
+@app.get("/live", include_in_schema=False)
+def live():
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health():
     return {
@@ -172,10 +240,22 @@ def health():
 
 
 @app.post("/api/v1/analyze/audio")
-async def analyze_audio(background: BackgroundTasks, audio: UploadFile = File(...)):
+async def analyze_audio(
+    request: Request,
+    background: BackgroundTasks,
+    audio: UploadFile = File(...),
+):
     started = time.perf_counter()
+    source = _analysis_source(request)
+    audio_limit = 10 if source in {"demo", "automated_test"} else 3
+    _enforce_rate_limit(request, "analyze_audio", limit=audio_limit, window_seconds=600)
     base_type = (audio.content_type or "").split(";")[0].strip().lower()
-    if base_type not in ALLOWED_AUDIO_TYPES:
+    extension = Path(audio.filename or "").suffix.lower()
+    is_generic_allowed = (
+        base_type == "application/octet-stream"
+        and extension in ALLOWED_AUDIO_EXTENSIONS
+    )
+    if base_type not in ALLOWED_AUDIO_TYPES and not is_generic_allowed:
         raise HTTPException(status_code=422, detail=f"Unsupported audio type: {audio.content_type}")
 
     body = await audio.read(MAX_AUDIO_BYTES + 1)
@@ -184,24 +264,33 @@ async def analyze_audio(background: BackgroundTasks, audio: UploadFile = File(..
     if not body:
         raise HTTPException(status_code=422, detail="Audio file is empty")
 
-    transcript, asr_path = await run_in_threadpool(
-        transcribe_audio,
-        body,
-        audio.filename or "audio",
-    )
-    response = await run_in_threadpool(build_response, "audio", asr_path, transcript)
+    async with _audio_slots:
+        transcript, asr_path = await run_in_threadpool(
+            transcribe_audio,
+            body,
+            audio.filename or "audio",
+        )
+        response = await run_in_threadpool(build_response, "audio", asr_path, transcript)
     background.add_task(
         pulse.record,
         response,
         transcript["text"],
         int((time.perf_counter() - started) * 1000),
+        source,
     )
     return response
 
 
 @app.post("/api/v1/analyze/text")
-async def analyze_text(body: TextAnalyzeRequest, background: BackgroundTasks):
+async def analyze_text(
+    body: TextAnalyzeRequest,
+    request: Request,
+    background: BackgroundTasks,
+):
     started = time.perf_counter()
+    source = _analysis_source(request)
+    text_limit = 60 if source in {"demo", "automated_test"} else 20
+    _enforce_rate_limit(request, "analyze_text", limit=text_limit, window_seconds=60)
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
 
@@ -212,17 +301,24 @@ async def analyze_text(body: TextAnalyzeRequest, background: BackgroundTasks):
         response,
         transcript["text"],
         int((time.perf_counter() - started) * 1000),
+        source,
     )
     return response
 
 
 @app.get("/api/v1/similar")
-async def similar_scripts(q: str = Query(min_length=3, max_length=2_000), limit: int = Query(3, ge=1, le=10)):
+async def similar_scripts(
+    request: Request,
+    q: str = Query(min_length=3, max_length=2_000),
+    limit: int = Query(3, ge=1, le=10),
+):
+    _enforce_rate_limit(request, "similar", limit=30, window_seconds=60)
     if not classify.models_status()["embedder"]:
         raise HTTPException(status_code=503, detail="Similarity model is not loaded")
     return await run_in_threadpool(classify.find_similar_scripts, q.strip(), limit)
 
 
 @app.get("/api/v1/pulse")
-async def threat_pulse(days: int = Query(7, ge=1, le=90)):
+async def threat_pulse(request: Request, days: int = Query(7, ge=1, le=90)):
+    _enforce_rate_limit(request, "pulse", limit=60, window_seconds=60)
     return await pulse.summary(days)

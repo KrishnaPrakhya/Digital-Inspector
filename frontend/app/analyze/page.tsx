@@ -53,6 +53,7 @@ export default function AnalyzePage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("record");
   const [text, setText] = useState("");
+  const [textIsDemo, setTextIsDemo] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -161,6 +162,7 @@ export default function AnalyzePage() {
           setOcrProgress(Math.round(message.progress * 100)),
       });
       setText(result.data.text.trim());
+      setTextIsDemo(false);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Screenshot OCR failed.",
@@ -200,7 +202,9 @@ export default function AnalyzePage() {
   function submit() {
     if (mode === "text" || mode === "screenshot") {
       if (!text.trim()) return setError("Add some text to analyze first.");
-      return completeAnalysis(() => analyzeText(text.trim()));
+      return completeAnalysis(() =>
+        analyzeText(text.trim(), textIsDemo ? "demo" : "user"),
+      );
     }
     if (!file) return setError("Record or select an audio file first.");
     return completeAnalysis(() => analyzeAudio(file, file.name));
@@ -217,7 +221,7 @@ export default function AnalyzePage() {
           blob.type || (filename.endsWith(".wav") ? "audio/wav" : "audio/mpeg"),
       });
       setFile(demoFile);
-      await completeAnalysis(() => analyzeAudio(demoFile, filename));
+      await completeAnalysis(() => analyzeAudio(demoFile, filename, "demo"));
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Demo analysis failed.",
@@ -365,7 +369,10 @@ export default function AnalyzePage() {
               <textarea
                 id="evidence-text"
                 value={text}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  setTextIsDemo(false);
+                }}
                 placeholder="Paste exactly what the caller or sender said…"
                 maxLength={50_000}
               />
@@ -378,7 +385,10 @@ export default function AnalyzePage() {
                 {TEXT_SAMPLES.map((sample) => (
                   <button
                     key={sample.family}
-                    onClick={() => setText(sample.text)}
+                    onClick={() => {
+                      setText(sample.text);
+                      setTextIsDemo(true);
+                    }}
                     style={
                       {
                         "--sample": FAMILY_META[sample.family].color,
@@ -422,7 +432,10 @@ export default function AnalyzePage() {
                 <textarea
                   className="ocr-text"
                   value={text}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    setTextIsDemo(false);
+                  }}
                 />
               )}
             </div>

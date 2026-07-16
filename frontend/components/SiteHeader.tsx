@@ -37,6 +37,7 @@ export function SiteHeader() {
   const readyCount = health
     ? Object.values(health.models).filter(Boolean).length
     : 0;
+  const aiReady = health?.status === "ok" && readyCount === 3;
 
   return (
     <>
@@ -78,6 +79,14 @@ export function SiteHeader() {
           <button className="language-button" onClick={toggle}>
             {t.language}
           </button>
+          <span
+            aria-label={health ? `${readyCount} of 3 AI models ready` : "AI service unavailable"}
+            className="health-pill"
+            role="status"
+          >
+            <i className={aiReady ? "online" : "offline"} />
+            {health ? `${readyCount}/3 AI ready` : "AI offline"}
+          </span>
         </nav>
       </header>
     </>

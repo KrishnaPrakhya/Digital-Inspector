@@ -11,6 +11,11 @@ PHONE_PATTERN = re.compile(r"(?:\+91[\-\s]?)?[6-9]\d{9}\b")
 
 AMOUNT_PATTERN = re.compile(r"(?:₹|Rs\.?|INR)\s?[\d,]+(?:\.\d{1,2})?", re.IGNORECASE)
 LAKH_CRORE_PATTERN = re.compile(r"\b\d+(?:\.\d+)?\s*(?:lakh|lakhs|crore|crores)\b", re.IGNORECASE)
+HINDI_AMOUNT_PATTERN = re.compile(
+    r"(?:₹\s*)?(?:\d[\d,]*|एक|दो|तीन|चार|पांच|पाँच|दस|बीस|पचास|सौ)"
+    r"\s*(?:हजार|लाख|करोड़)?\s*(?:रुपये|रुपया)",
+    re.IGNORECASE,
+)
 
 LINK_PATTERN = re.compile(r"https?://\S+|www\.\S+")
 
@@ -19,6 +24,9 @@ AGENCIES = [
     "Cyber Cell", "Cyber Crime", "Customs", "Customs Department",
     "Police", "Mumbai Police", "Delhi Police", "Income Tax Department",
     "Narcotics Control Bureau", "Income Tax", "Court", "Supreme Court",
+    "सीबीआई", "ईडी", "प्रवर्तन निदेशालय", "एनसीबी", "ट्राई", "आरबीआई",
+    "साइबर सेल", "साइबर क्राइम", "कस्टम", "कस्टम विभाग", "पुलिस",
+    "मुंबई पुलिस", "दिल्ली पुलिस", "आयकर विभाग", "अदालत",
 ]
 
 BANKS_APPS = [
@@ -26,9 +34,14 @@ BANKS_APPS = [
     "Paytm", "PhonePe", "GPay", "Google Pay", "AnyDesk", "TeamViewer",
     "Bank of Baroda", "Union Bank", "Punjab National Bank", "PNB",
     "IDBI", "Federal Bank", "RBL", "Canara Bank",
+    "एसबीआई", "एचडीएफसी", "आईसीआईसीआई", "एक्सिस बैंक", "पेटीएम",
+    "फोनपे", "गूगल पे", "एनीडेस्क", "टीमव्यूअर",
 ]
 
-COURIER = ["FedEx", "BlueDart", "Blue Dart", "DTDC", "DHL", "India Post", "Speed Post"]
+COURIER = [
+    "FedEx", "BlueDart", "Blue Dart", "DTDC", "DHL", "India Post", "Speed Post",
+    "फेडेक्स", "ब्लू डार्ट", "डीटीडीसी", "डीएचएल", "इंडिया पोस्ट",
+]
 
 
 def extract_upi_ids(text: str) -> list:
@@ -54,7 +67,11 @@ def extract_phone_numbers(text: str) -> list:
 
 
 def extract_amounts(text: str) -> list:
-    found = AMOUNT_PATTERN.findall(text) + LAKH_CRORE_PATTERN.findall(text)
+    found = (
+        AMOUNT_PATTERN.findall(text)
+        + LAKH_CRORE_PATTERN.findall(text)
+        + HINDI_AMOUNT_PATTERN.findall(text)
+    )
     return sorted(set(found))
 
 

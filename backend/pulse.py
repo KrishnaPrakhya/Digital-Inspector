@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import re
@@ -7,9 +8,9 @@ import asyncpg
 logger = logging.getLogger("pulse")
 
 DATABASE_URL = os.environ.get("PULSE_DATABASE_URL", "")
-RETENTION_DAYS = int(os.environ.get("PULSE_RETENTION_DAYS", "90"))
+RETENTION_DAYS = max(1, int(os.environ.get("PULSE_RETENTION_DAYS", "90")))
 
-DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+DEVANAGARI = re.compile(r"[\u0900-\u097f]")
 HINGLISH_MARKERS = re.compile(
     r"\b(aap|aapka|aapko|hai|hain|nahi|nahin|kar|karo|karna|kya|mujhe|tumhara"
     r"|paisa|paise|rupaye|turant|abhi|bhai|sahab|namaste|dhanyavaad|theek|acha)\b",
@@ -33,6 +34,10 @@ CREATE TABLE IF NOT EXISTS analysis_events (
 );
 CREATE INDEX IF NOT EXISTS analysis_events_created_idx ON analysis_events (created_at DESC);
 CREATE INDEX IF NOT EXISTS analysis_events_family_idx ON analysis_events (family);
+ALTER TABLE analysis_events ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE analysis_events ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+CREATE INDEX IF NOT EXISTS analysis_events_fingerprint_idx
+    ON analysis_events (fingerprint, created_at DESC);
 """
 
 _pool = None
@@ -72,19 +77,44 @@ async def disconnect() -> None:
         _pool = None
 
 
-async def record(response: dict, transcript_text: str, latency_ms: int) -> None:
+def _fingerprint(text: str) -> str:
+    normalized = " ".join(text.casefold().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+async def record(
+    response: dict,
+    transcript_text: str,
+    latency_ms: int,
+    source: str = "user",
+) -> None:
     if _pool is None:
         return
     try:
         stages = sorted({item["stage"] for item in response["stages"] if item["stage"] != "s0_none"})
         entity_kinds = sorted(kind for kind, values in response["entities"].items() if values)
+        fingerprint = _fingerprint(transcript_text)
         async with _pool.acquire() as connection:
+            duplicate = await connection.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM analysis_events
+                    WHERE fingerprint = $1 AND source = $2
+                      AND created_at > now() - interval '10 minutes'
+                )
+                """,
+                fingerprint,
+                source,
+            )
+            if duplicate:
+                return
             await connection.execute(
                 """
                 INSERT INTO analysis_events
                     (family, confidence, risk_score, max_stage, stages_seen,
-                     input_type, asr_path, language_hint, entity_kinds, latency_ms)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                     input_type, asr_path, language_hint, entity_kinds, latency_ms,
+                     source, fingerprint)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                 """,
                 response["classification"]["family"],
                 float(response["classification"]["confidence"]),
@@ -96,6 +126,14 @@ async def record(response: dict, transcript_text: str, latency_ms: int) -> None:
                 detect_language(transcript_text),
                 entity_kinds,
                 latency_ms,
+                source,
+                fingerprint,
+            )
+            await connection.execute(
+                f"""
+                DELETE FROM analysis_events
+                WHERE created_at < now() - interval '{RETENTION_DAYS} days'
+                """
             )
     except Exception as exc:
         logger.warning("threat pulse write skipped: %s", exc)
@@ -113,14 +151,15 @@ async def summary(days: int = 7) -> dict:
                    count(*) FILTER (WHERE risk_score >= 55) AS high_risk,
                    coalesce(round(avg(risk_score)), 0) AS avg_risk
             FROM analysis_events
-            WHERE created_at > now() - interval '{window}'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
             """
         )
         families = await connection.fetch(
             f"""
             SELECT family, count(*) AS total
             FROM analysis_events
-            WHERE created_at > now() - interval '{window}' AND family <> 'legitimate'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
+              AND family <> 'legitimate'
             GROUP BY family ORDER BY total DESC
             """
         )
@@ -128,7 +167,7 @@ async def summary(days: int = 7) -> dict:
             f"""
             SELECT stage, count(*) AS total
             FROM analysis_events, unnest(stages_seen) AS stage
-            WHERE created_at > now() - interval '{window}'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
             GROUP BY stage ORDER BY stage
             """
         )
@@ -136,7 +175,7 @@ async def summary(days: int = 7) -> dict:
             f"""
             SELECT language_hint, count(*) AS total
             FROM analysis_events
-            WHERE created_at > now() - interval '{window}'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
             GROUP BY language_hint ORDER BY total DESC
             """
         )
@@ -144,7 +183,8 @@ async def summary(days: int = 7) -> dict:
             f"""
             SELECT kind, count(*) AS total
             FROM analysis_events, unnest(entity_kinds) AS kind
-            WHERE created_at > now() - interval '{window}' AND family <> 'legitimate'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
+              AND family <> 'legitimate'
             GROUP BY kind ORDER BY total DESC
             """
         )
@@ -153,7 +193,7 @@ async def summary(days: int = 7) -> dict:
             SELECT date_trunc('day', created_at)::date AS day,
                    count(*) FILTER (WHERE family <> 'legitimate') AS scams
             FROM analysis_events
-            WHERE created_at > now() - interval '{window}'
+            WHERE created_at > now() - interval '{window}' AND source = 'user'
             GROUP BY day ORDER BY day
             """
         )

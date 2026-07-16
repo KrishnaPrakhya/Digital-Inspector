@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 
 import type { Entities, ScamFamily } from "@/lib/api";
 import { FAMILY_META, STAGE_META } from "@/lib/scam-content";
+import { generateComplaintPdf } from "@/lib/complaint-pdf";
 import { getReport, type StoredReport } from "@/lib/storage";
 import { useCountUp } from "@/lib/use-count-up";
 
@@ -45,11 +46,7 @@ export default function ReportPage() {
 
   async function copyComplaint() { await navigator.clipboard.writeText(current.complaint.text_en); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }
   async function downloadPdf() {
-    const { jsPDF } = await import("jspdf"); const pdf = new jsPDF();
-    pdf.setFillColor(9, 10, 13); pdf.rect(0, 0, 210, 38, "F"); pdf.setTextColor(255, 255, 255); pdf.setFontSize(20); pdf.text("Digital Inspector", 18, 18); pdf.setFontSize(10); pdf.text("Cybercrime complaint draft", 18, 27);
-    pdf.setTextColor(25, 25, 25); pdf.setFontSize(10); pdf.text(`Reference: ${current.request_id}`, 18, 47); pdf.text(`Detected pattern: ${family.name}`, 18, 54); pdf.text(`Risk score: ${current.risk_score}/100`, 18, 61);
-    pdf.setFontSize(12); pdf.text(pdf.splitTextToSize(current.complaint.text_en || "No complaint generated for a legitimate call.", 174), 18, 75);
-    pdf.save(`digital-inspector-${current.request_id.slice(0, 8)}.pdf`);
+    await generateComplaintPdf(current);
   }
   async function shareReport() {
     const text = current.actions.sms_body;

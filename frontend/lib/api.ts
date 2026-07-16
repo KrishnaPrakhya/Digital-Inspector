@@ -1,5 +1,6 @@
 export type InputType = "audio" | "text";
 export type AsrPath = "groq" | "local" | null;
+export type AnalysisSource = "user" | "demo" | "automated_test";
 
 export type ScamFamily =
   | "digital_arrest"
@@ -160,22 +161,30 @@ async function apiFetch(path: string, init?: RequestInit) {
 export async function analyzeAudio(
   file: Blob,
   filename = "recording.webm",
+  source: AnalysisSource = "user",
 ): Promise<AnalyzeResponse> {
   const formData = new FormData();
   formData.append("audio", file, filename);
 
   const res = await apiFetch("/api/v1/analyze/audio", {
     method: "POST",
+    headers: { "X-Analysis-Source": source },
     body: formData,
   });
 
   return parseJsonOrThrow<AnalyzeResponse>(res);
 }
 
-export async function analyzeText(text: string): Promise<AnalyzeResponse> {
+export async function analyzeText(
+  text: string,
+  source: AnalysisSource = "user",
+): Promise<AnalyzeResponse> {
   const res = await apiFetch("/api/v1/analyze/text", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Analysis-Source": source,
+    },
     body: JSON.stringify({ text }),
   });
 
