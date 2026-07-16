@@ -7,13 +7,13 @@ Digital Inspector is a privacy-first web application that detects Indian phone-s
 ## Architecture
 
 ```text
-Browser / Next.js 15 PWA
+Browser / Next.js 15 PWA (Vercel)
   ├─ microphone, upload, pasted text, client-side OCR
   ├─ IndexedDB-only report history
   └─ complaint PDF and 1930/cybercrime actions
                 │ HTTPS
                 ▼
-FastAPI / Hugging Face Docker Space :7860
+FastAPI on a DigitalOcean Droplet, behind Caddy (auto HTTPS) :7860
   ├─ Groq Whisper → lazy faster-whisper fallback
   ├─ family classifier (ONNX Runtime)
   ├─ stage classifier (ONNX Runtime)
@@ -22,7 +22,7 @@ FastAPI / Hugging Face Docker Space :7860
   └─ deterministic risk score and complaint templates
 ```
 
-The production backend is torch-free. Models are baked into the Docker image and loaded once during startup; no serving artifact is downloaded during a request.
+The production backend is torch-free. Models are pulled once from a pinned, public Hugging Face model repository during the Docker build and baked into the image — Hugging Face is an artifact registry only, never in the request path. Caddy terminates TLS and reverse-proxies to the container, which is not exposed directly to the internet.
 
 ## Model card
 
@@ -86,9 +86,10 @@ The integration test initializes all three ONNX paths and checks digital-arrest,
 
 ## Deployment
 
-- Deploy the root `Dockerfile` as a Hugging Face Docker Space and add `GROQ_API_KEY` and `PROD_VERCEL_URL` as secrets/variables.
-- Deploy `frontend/` to Vercel with `NEXT_PUBLIC_API_BASE_URL` set to the Space URL.
-- Keep both `/health` and the Vercel URL warm with a 10-minute monitor during judging.
+- Backend: the root `Dockerfile` runs on a single DigitalOcean Droplet behind Caddy, which auto-provisions HTTPS via Let's Encrypt. `GROQ_API_KEY` and `PROD_VERCEL_URL` are set as container environment variables, never committed. See [deploy/digitalocean/DEPLOY.md](deploy/digitalocean/DEPLOY.md) for the full setup.
+- Model artifacts are pulled from a pinned, public Hugging Face model repository at Docker build time only; Hugging Face never serves a live request.
+- Frontend: `frontend/` deploys to Vercel with `NEXT_PUBLIC_API_BASE_URL` set to the production API domain.
+- Keep both `/health` and the Vercel URL warm with a monitor (e.g. UptimeRobot) during judging.
 - Never expose `GROQ_API_KEY` through a `NEXT_PUBLIC_` variable.
 
 ## Limitations
