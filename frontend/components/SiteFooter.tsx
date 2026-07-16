@@ -17,6 +17,7 @@ export function SiteFooter() {
         <div>
           <b>Product</b>
           <Link href="/analyze">Analyze evidence</Link>
+          <Link href="/pulse">Scam pulse</Link>
           <Link href="/library">Scam library</Link>
           <Link href="/landscape">Threat map</Link>
           <Link href="/dashboard">Local reports</Link>

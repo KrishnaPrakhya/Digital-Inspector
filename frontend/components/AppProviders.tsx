@@ -6,6 +6,7 @@ type Locale = "en" | "hi";
 const strings = {
   en: {
     analyze: "Analyze",
+    pulse: "Scam pulse",
     library: "Scam library",
     landscape: "Threat map",
     dashboard: "My reports",
@@ -15,6 +16,7 @@ const strings = {
   },
   hi: {
     analyze: "जाँच करें",
+    pulse: "स्कैम पल्स",
     library: "स्कैम लाइब्रेरी",
     landscape: "खतरे का नक्शा",
     dashboard: "मेरी रिपोर्ट",

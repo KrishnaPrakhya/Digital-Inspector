@@ -29,8 +29,9 @@ export function SiteHeader() {
 
   const nav = [
     ["/analyze", t.analyze],
-    ["/library", t.library],
     ["/landscape", t.landscape],
+    ["/library", t.library],
+    ["/pulse", t.pulse],
     ["/dashboard", t.dashboard],
   ];
   const readyCount = health

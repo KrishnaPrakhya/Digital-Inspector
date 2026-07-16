@@ -17,9 +17,34 @@ services:
       MODELS_DIR: /app/models
       LOCAL_ASR_MODEL: /app/models/faster-whisper-small
       GIT_SHA: ${GIT_SHA:-digitalocean}
+      PULSE_DATABASE_URL: postgresql://pulse:${POSTGRES_PASSWORD}@db:5432/pulse
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "7860"
     mem_limit: 6g
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pulse
+    volumes:
+      - pulse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 512m
     logging:
       options:
         max-size: "10m"
@@ -50,3 +75,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  pulse_data:

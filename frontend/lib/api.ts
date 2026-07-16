@@ -98,6 +98,22 @@ export interface HealthResponse {
   version: string;
 }
 
+export interface PulseResponse {
+  available: boolean;
+  window_days?: number;
+  totals?: {
+    analyses: number;
+    scams: number;
+    high_risk: number;
+    avg_risk: number;
+  };
+  families?: { family: string; count: number }[];
+  stages?: { stage: string; count: number }[];
+  languages?: { language: string; count: number }[];
+  evidence?: { kind: string; count: number }[];
+  daily?: { day: string; scams: number }[];
+}
+
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 export const MAX_AUDIO_DURATION_SECONDS = 180;
 
@@ -175,4 +191,9 @@ export async function searchSimilarScripts(query: string, limit = 6): Promise<Si
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const res = await apiFetch(`/api/v1/similar?${params}`);
   return parseJsonOrThrow<SimilarScript[]>(res);
+}
+
+export async function getThreatPulse(days = 7): Promise<PulseResponse> {
+  const res = await apiFetch(`/api/v1/pulse?days=${days}`, { signal: AbortSignal.timeout(10_000) });
+  return parseJsonOrThrow<PulseResponse>(res);
 }

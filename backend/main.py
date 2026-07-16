@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 import classify
 import complaint as complaint_engine
 import extractors
+import pulse
 import risk
 from asr import local_asr_loaded, transcribe_audio
 
@@ -47,7 +48,9 @@ PROD_VERCEL_URL = os.environ.get("PROD_VERCEL_URL", "")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     classify.load_models()
+    await pulse.connect()
     yield
+    await pulse.disconnect()
 
 
 app = FastAPI(title="Scam Call Interceptor API", lifespan=lifespan)
@@ -163,12 +166,14 @@ def health():
             "groq_configured": bool(os.environ.get("GROQ_API_KEY")),
             "local_loaded": local_asr_loaded(),
         },
+        "pulse": pulse.enabled(),
         "version": os.environ.get("GIT_SHA", "dev"),
     }
 
 
 @app.post("/api/v1/analyze/audio")
-async def analyze_audio(audio: UploadFile = File(...)):
+async def analyze_audio(background: BackgroundTasks, audio: UploadFile = File(...)):
+    started = time.perf_counter()
     base_type = (audio.content_type or "").split(";")[0].strip().lower()
     if base_type not in ALLOWED_AUDIO_TYPES:
         raise HTTPException(status_code=422, detail=f"Unsupported audio type: {audio.content_type}")
@@ -184,16 +189,31 @@ async def analyze_audio(audio: UploadFile = File(...)):
         body,
         audio.filename or "audio",
     )
-    return await run_in_threadpool(build_response, "audio", asr_path, transcript)
+    response = await run_in_threadpool(build_response, "audio", asr_path, transcript)
+    background.add_task(
+        pulse.record,
+        response,
+        transcript["text"],
+        int((time.perf_counter() - started) * 1000),
+    )
+    return response
 
 
 @app.post("/api/v1/analyze/text")
-async def analyze_text(body: TextAnalyzeRequest):
+async def analyze_text(body: TextAnalyzeRequest, background: BackgroundTasks):
+    started = time.perf_counter()
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
 
     transcript = {"text": body.text.strip(), "segments": split_sentences(body.text)}
-    return await run_in_threadpool(build_response, "text", None, transcript)
+    response = await run_in_threadpool(build_response, "text", None, transcript)
+    background.add_task(
+        pulse.record,
+        response,
+        transcript["text"],
+        int((time.perf_counter() - started) * 1000),
+    )
+    return response
 
 
 @app.get("/api/v1/similar")
@@ -201,3 +221,8 @@ async def similar_scripts(q: str = Query(min_length=3, max_length=2_000), limit:
     if not classify.models_status()["embedder"]:
         raise HTTPException(status_code=503, detail="Similarity model is not loaded")
     return await run_in_threadpool(classify.find_similar_scripts, q.strip(), limit)
+
+
+@app.get("/api/v1/pulse")
+async def threat_pulse(days: int = Query(7, ge=1, le=90)):
+    return await pulse.summary(days)
