@@ -6,7 +6,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Digital Inspector — Scam Call Interceptor",
-  description: "Detect Indian phone-scam patterns and prepare a cybercrime complaint.",
+  description:
+    "Detect Indian phone-scam patterns and prepare a cybercrime complaint.",
 };
 
 export default function RootLayout({
@@ -16,7 +17,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body><AppProviders><SiteHeader /><div className="app-content">{children}</div><SiteFooter /></AppProviders></body>
+      <body>
+        <AppProviders>
+          <SiteHeader />
+          <div className="app-content">{children}</div>
+          <SiteFooter />
+        </AppProviders>
+      </body>
     </html>
   );
 }

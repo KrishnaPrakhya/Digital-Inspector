@@ -23,9 +23,9 @@ Copy the public IPv4 address after creation.
 
 Create this record in the domain's Cloudflare DNS page:
 
-| Type | Name | Content | Proxy status |
-| --- | --- | --- | --- |
-| A | `api` | the Droplet IPv4 | **DNS only** initially |
+| Type | Name  | Content          | Proxy status           |
+| ---- | ----- | ---------------- | ---------------------- |
+| A    | `api` | the Droplet IPv4 | **DNS only** initially |
 
 DNS-only avoids Cloudflare's 120-second proxy read timeout for a worst-case local
 audio transcription. Caddy still provides normal public HTTPS. After measuring
@@ -93,8 +93,8 @@ Port 7860 is intentionally not published to the host or public internet.
 Test inference:
 
 ```bash
-curl -fsS https://api.example.com/api/v1/analyze/text \
-  -H 'Content-Type: application/json' \
+curl -fsS https://api.example.com/api/v1/analyze/text
+  -H 'Content-Type: application/json'
   -d '{"text":"This is CBI. Transfer Rs 50000 to safeaccount@ybl immediately or you will be arrested."}'
 ```
 

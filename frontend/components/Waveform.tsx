@@ -23,6 +23,11 @@ export function Waveform({ url }: { url: string }) {
     return () => wave.destroy();
   }, [url]);
 
-  return <div className="waveform" ref={host} aria-label="Audio waveform; click to play or pause" />;
+  return (
+    <div
+      className="waveform"
+      ref={host}
+      aria-label="Audio waveform; click to play or pause"
+    />
+  );
 }
-
