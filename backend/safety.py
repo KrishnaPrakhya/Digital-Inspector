@@ -49,6 +49,21 @@ BANK_KYC = re.compile(
 )
 
 
+NEGATED_ACTION = re.compile(
+    r"\b(?:no need to|not need to|never|do not|don'?t|doesn'?t|didn'?t|won'?t|would never|will never"
+    r"|no one (?:will|should)|nobody (?:will|should)|avoid|refuse to)\s+"
+    r"(?:\w+\s+){0,3}?(?:share|shares|sharing|tell|provide|confirm|send|give|disclose|reveal"
+    r"|transfer|pay|deposit)\b"
+    r"|(?:ओटीपी|पिन|सीवीवी|आधार|पैसे|राशि)[^.!?।]{0,40}?(?:मत\s*(?:बताइ|भेज|दीजिए|करें)"
+    r"|न\s*(?:बताइ|भेज|दें|करें)|नहीं\s*(?:बताइ|भेज|देना|करना))",
+    re.IGNORECASE,
+)
+
+
+def _strip_negated_actions(text: str) -> str:
+    return NEGATED_ACTION.sub(" ", text)
+
+
 def _without_protective_language(text: str) -> str:
     remaining = text
     for pattern in PROTECTIVE_PATTERNS:
@@ -69,12 +84,13 @@ def _protective_override(text: str) -> bool:
 
 
 def _scam_rule_family(text: str) -> str | None:
+    actionable = _strip_negated_actions(text)
     signals = {
         "authority": bool(AUTHORITY.search(text)),
         "threat": bool(THREAT.search(text)),
         "isolation": bool(ISOLATION.search(text)),
-        "payment": bool(PAYMENT.search(text)),
-        "info": bool(INFO_HARVEST.search(text)),
+        "payment": bool(PAYMENT.search(actionable)),
+        "info": bool(INFO_HARVEST.search(actionable)),
     }
     if PARCEL.search(text) and CONTRABAND.search(text) and signals["authority"] and (
         signals["threat"] or signals["payment"]
@@ -113,14 +129,15 @@ def _override_classification(classification: dict, family: str, confidence: floa
 
 
 def _rule_stage(text: str) -> str | None:
-    for stage, pattern in (
-        ("s5_payment_demand", PAYMENT),
-        ("s4_info_harvest", INFO_HARVEST),
-        ("s3_isolation", ISOLATION),
-        ("s2_threat_urgency", THREAT),
-        ("s1_authority_claim", AUTHORITY),
+    actionable = _strip_negated_actions(text)
+    for stage, pattern, source in (
+        ("s5_payment_demand", PAYMENT, actionable),
+        ("s4_info_harvest", INFO_HARVEST, actionable),
+        ("s3_isolation", ISOLATION, text),
+        ("s2_threat_urgency", THREAT, text),
+        ("s1_authority_claim", AUTHORITY, text),
     ):
-        if pattern.search(text):
+        if pattern.search(source):
             return stage
     return None
 
