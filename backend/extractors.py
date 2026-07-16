@@ -62,18 +62,21 @@ def extract_links(text: str) -> list:
     return sorted(set(LINK_PATTERN.findall(text)))
 
 
+def _drop_substring_matches(matched: set) -> list:
+    return sorted(
+        term
+        for term in matched
+        if not any(term.lower() != other.lower() and term.lower() in other.lower() for other in matched)
+    )
+
+
 def _extract_dictionary_terms(text: str, terms: list) -> list:
     matched = {
         term
         for term in terms
         if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, re.IGNORECASE)
     }
-    # Prefer the most specific dictionary value ("Mumbai Police" over "Police").
-    return sorted(
-        term
-        for term in matched
-        if not any(term.lower() != other.lower() and term.lower() in other.lower() for other in matched)
-    )
+    return _drop_substring_matches(matched)
 
 
 def extract_agencies(text: str) -> list:

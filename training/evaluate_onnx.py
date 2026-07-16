@@ -35,8 +35,7 @@ def load_eval(path: Path) -> list[dict]:
     return [row for row in rows if row.get("eval_kind", "real_holdout") == "real_holdout"]
 
 
-def full_transcript(row: dict) -> str:
-    # Serving receives an ASR/pasted transcript without speaker-name prefixes.
+def full_transcript_without_speaker_prefixes(row: dict) -> str:
     return "\n".join(turn["text"] for turn in row["turns"])
 
 
@@ -86,11 +85,10 @@ def main() -> int:
 
     tokenizer = AutoTokenizer.from_pretrained(str(args.model_dir), local_files_only=True)
     session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
-    texts = [full_transcript(row) for row in rows]
+    texts = [full_transcript_without_speaker_prefixes(row) for row in rows]
     labels = np.array([LABEL_TO_ID[row["family"]] for row in rows])
 
-    # Warm up runtime and allocator before measuring the full pass.
-    predict(session, tokenizer, texts[:1], 1, args.max_length)
+    predict(session, tokenizer, texts[:1], batch_size=1, max_length=args.max_length)
     logits, elapsed = predict(session, tokenizer, texts, args.batch_size, args.max_length)
     predictions = logits.argmax(axis=1)
 
