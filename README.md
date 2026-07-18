@@ -19,10 +19,17 @@ FastAPI on a DigitalOcean Droplet, behind Caddy (auto HTTPS) :7860
   ├─ stage classifier (ONNX Runtime)
   ├─ multilingual-e5-small (ONNX INT8) + FAISS
   ├─ deterministic regex/dictionary entity extraction
+  ├─ deterministic safety policy (negation-aware rule layer)
   └─ deterministic risk score and complaint templates
+                │ fire-and-forget, after the response is sent
+                ▼
+PostgreSQL (same compose network, never exposed publicly)
+  └─ anonymous aggregate threat events → /pulse
 ```
 
 The production backend is torch-free. Models are pulled once from a pinned, public Hugging Face model repository during the Docker build and baked into the image — Hugging Face is an artifact registry only, never in the request path. Caddy terminates TLS and reverse-proxies to the container, which is not exposed directly to the internet.
+
+Postgres backs the public **Scam Pulse** feed only. It is optional: if the database is unavailable the API keeps serving analyses normally and `/health` reports `pulse: false`. Writes happen in a FastAPI background task **after** the response has been returned, so the database adds no latency to an analysis and cannot fail one.
 
 ## Model card
 
@@ -35,6 +42,24 @@ The production backend is torch-free. Models are pulled once from a pinned, publ
 Family evaluation uses held-out real call-shaped samples. Stage evaluation uses held-out, dialogue-grouped BothBosu utterances because the available real stage labels are not gradeable at utterance level. Public real digital-arrest transcripts are unavailable, so that family remains synthetic/advisory-seeded evaluation only. These numbers describe the checked-in evaluation sets, not safety guarantees.
 
 Training data combines public research datasets, Indian fraud-call data, and synthetic augmentation. Bulk email/SMS data is capped and excluded from evaluation. Augmented variants inherit their parent dialogue's split to prevent leakage. Family training text contains no speaker labels because production ASR has no diarization.
+
+## Scam Pulse — anonymous collective intelligence
+
+Every analysis contributes the *shape* of the attack to a public feed at `/pulse`, and nothing else. A stored row contains only:
+
+```text
+family · confidence · risk_score · max_stage · stages_seen
+input_type · asr_path · language_hint · entity_kinds · latency_ms
+```
+
+`entity_kinds` records **which kinds** of evidence appeared (`['upi_ids','amounts']`) — never the values. The transcript, UPI handles, phone numbers, amounts, and any account identifier are never written to the database, and there is no user account, cookie, or IP stored. Personal report history stays in the browser's IndexedDB and is never uploaded.
+
+Additional properties:
+
+- Demo samples and automated tests send `X-Analysis-Source`, and only `source = 'user'` rows are counted in the public feed, so demo runs never distort the statistics.
+- Identical transcripts are de-duplicated for 10 minutes by a SHA-256 fingerprint of the normalised text, so repeatedly testing one sample does not inflate the counters.
+- Rows older than `PULSE_RETENTION_DAYS` (default 90) are deleted.
+- `language_hint` is deterministic: Devanagari → `hi`, two or more romanised Hinglish markers → `hinglish`, otherwise `en`.
 
 ## Deterministic safety logic
 
@@ -49,6 +74,8 @@ clamped to 0…100
 ```
 
 Stage weights are `s0=.2`, `s1=.5`, `s2=.65`, `s3=.8`, `s4=.9`, and `s5=1.0`. A `legitimate` verdict is forced to risk 0.
+
+`backend/safety.py` applies a deterministic policy on top of the models, because the evaluation corpus is English-only and the classifiers never saw benign Hindi speech. It recognises Hindi and Hinglish authority, threat, isolation, information-harvest and payment language, and keeps protective advice from being scored as a scam. The rules are **negation-aware**: "no need to share your OTP" and "never share your PIN" are stripped before the information-harvest and payment patterns run, so safety guidance is not mistaken for a demand. Isolation is deliberately exempt from that stripping, because "don't tell your family" is itself a scam signal.
 
 ## Run locally
 
@@ -70,6 +97,13 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. The API contract and backend-specific notes are in [backend/README.md](backend/README.md).
+
+The Scam Pulse feed is optional locally. Without `PULSE_DATABASE_URL` the API runs normally and `/pulse` reports that the feed is disabled. To exercise it, start a throwaway Postgres and point the backend at it — the schema is created automatically on first connect:
+
+```powershell
+docker run -d --name pulse-db -e POSTGRES_USER=pulse -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=pulse -p 5432:5432 postgres:16-alpine
+$env:PULSE_DATABASE_URL="postgresql://pulse:devpass@localhost:5432/pulse"
+```
 
 ## Verification
 
@@ -95,6 +129,14 @@ The integration test initializes all three ONNX paths and checks digital-arrest,
 ## Limitations
 
 This is a decision-support tool, not proof that a caller is fraudulent. Speech recognition errors, code-mixed language, new scam scripts, or adversarial wording may alter results. Users should independently verify requests using official phone numbers and never delay contacting 1930 or their bank after a transfer.
+
+Known gaps, stated plainly rather than hidden:
+
+- **The evaluation set is English-only**, so the reported macro-F1 is an English number. Hindi and Hinglish accuracy is genuinely unmeasured; `backend/safety.py` compensates deterministically, but that is a mitigation, not a measurement.
+- **Benign Hindi banking or payment calls can still be over-flagged.** The `legitimate` class was never Hinglish-augmented, so the family model has seen Hindi scams but no benign Hindi speech. Closing this needs training data, not another rule.
+- **`parcel_courier`, `tech_support` and `investment_fraud` have about five held-out real rows each**, so their per-class scores are unstable estimates rather than measurements, and are reported with their support.
+- **`digital_arrest` has no public real corpus**; its training and evaluation are advisory-seeded synthetic data.
+- **Stage labels are LLM weak labels**, spot-checked by sample rather than expert-annotated.
 
 ## License
 

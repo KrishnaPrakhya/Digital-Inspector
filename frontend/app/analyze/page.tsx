@@ -51,7 +51,7 @@ function audioDuration(file: Blob): Promise<number> {
 
 export default function AnalyzePage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("record");
+  const [mode, setMode] = useState<Mode>("upload");
   const [text, setText] = useState("");
   const [textIsDemo, setTextIsDemo] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -230,10 +230,10 @@ export default function AnalyzePage() {
   }
 
   const tabs: [Mode, string, string][] = [
-    ["record", "Record", "Live microphone"],
     ["upload", "Upload", "Audio file"],
     ["text", "Paste", "Message or transcript"],
     ["screenshot", "Screenshot", "On-device OCR"],
+    ["record", "Record", "Live microphone"],
   ];
   const canSubmit =
     mode === "text" || mode === "screenshot"
