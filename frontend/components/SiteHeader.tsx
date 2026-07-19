@@ -79,14 +79,14 @@ export function SiteHeader() {
           <button className="language-button" onClick={toggle}>
             {t.language}
           </button>
-          <span
+          {/* <span
             aria-label={health ? `${readyCount} of 3 AI models ready` : "AI service unavailable"}
             className="health-pill"
             role="status"
           >
             <i className={aiReady ? "online" : "offline"} />
             {health ? `${readyCount}/3 AI ready` : "AI offline"}
-          </span>
+          </span> */}
         </nav>
       </header>
     </>
